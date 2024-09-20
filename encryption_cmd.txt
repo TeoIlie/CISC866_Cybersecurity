@@ -1,0 +1,1 @@
+openssl enc -aes-128-cbc -e -in plaintext.txt -out ciphertext.bin -K  6578616d706c65232323232323232323 -iv 010203040506070809000a0b0c0d0e0f

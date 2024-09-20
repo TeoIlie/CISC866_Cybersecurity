@@ -4,8 +4,61 @@
 #include <string.h>
 #include <openssl/err.h>
 
-int do_crypt(FILE *in, FILE *out, int do_encrypt, unsigned char *key, unsigned char *iv)
+/*
+This function prints the contents of a file; used for testing
+*/
+void print_file(char name[100], char read_type[3]) {
+    FILE *file = fopen(name, read_type);
+    if (!file) {
+        perror("Error opening file for printing.");
+        return;
+    }
+
+    unsigned char buffer[1024];  // Buffer to hold chunks of data
+    size_t bytes_read;
+
+    // Read the file in chunks and print
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
+        for (size_t i = 0; i < bytes_read; i++) {
+            printf("%02x", buffer[i]);  // Print byte in hex format
+        }
+    }
+
+    printf("\n");
+}
+
+/*
+This function prints an unsigned char word as hex; used for testing
+*/
+void print_as_hex(unsigned char word[]) {
+    // Print the word as hex bytes
+    printf("Hex Bytes: ");
+    for (size_t i = 0; i < 16; i++) {
+        printf("0x%02x ", word[i]);
+    }
+
+    printf("\n\n");
+}
+
+/*
+This function can be used for encryption/decryption, based on the value of do_encrypt:
+1. do_encrypt == 1 -> encryption
+2. do_encrypt == 0 -> decryption
+
+I am using it only for decryption for the scope of this problem. The input file "in"
+is the contents of "ciphertext.bin", which stores the ciphertext. The output file
+is "result.txt" which is the plain text. IV is hardcoded, and the key is read from
+a file "words.txt" 
+*/
+int do_crypt(FILE *out, int do_encrypt, unsigned char *key, unsigned char *iv)
 {
+    // in holds the encrypted text in "ciphertext.bin"
+    FILE *in = fopen("ciphertext.bin", "rb");
+    if (!in) {
+        perror("Error opening ciphertext file");
+        return EXIT_FAILURE;
+    }
+
     /* Allow enough space in output buffer for additional block */
     unsigned char inbuf[1024], outbuf[1024 + EVP_MAX_BLOCK_LENGTH];
     int inlen, outlen;
@@ -40,51 +93,101 @@ int do_crypt(FILE *in, FILE *out, int do_encrypt, unsigned char *key, unsigned c
 
     EVP_CIPHER_CTX_free(ctx);
     return 1;
+
+    fclose(in);
 }
 
+/*
+This program currently takes a hardcoded key and iv, opens an encrypted file
+"ciphertext.bin", and outputs the result to a decrypted file "test_result.txt".
+
+It has been tested and is working correctly.
+
+The next step is to read the key from a file "words.txt", iterating line by line
+of the file and attempting decryption.
+*/
 int main() {
-    FILE *infile, *outfile;
-    unsigned char key[EVP_MAX_KEY_LENGTH] = {0};
-    unsigned char iv[EVP_MAX_IV_LENGTH] = {0};
-
-
-    // Convert key and IV from hex to byte arrays
-    const char *hex_key = "6578616d706c65232323232323232323";
+    // IV is hardcoded, translated from hex_iv to iv
+    unsigned char iv[17];
     const char *hex_iv =  "aabbccddeeff00998877665544332211";
 
     for (int i = 0; i < 16; i++) {
-        sscanf(&hex_key[i*2], "%2hhx", &key[i]);
         sscanf(&hex_iv[i*2], "%2hhx", &iv[i]);
     }
 
-    // Open the input (encrypted) file
-    infile = fopen("ciphertext.bin", "rb");
-    if (!infile) {
-        perror("Opening input file");
-        return EXIT_FAILURE;
-    }
+    // outfile holds the decrypted text in "result.txt"
+    // file holds the list of words we try as the key
+    FILE *outfile, *words;
 
-    // Open the output (decrypted) file
-    outfile = fopen("test_result.txt", "wb");
+    // Open the output (decrypted) file, check for errors
+    outfile = fopen("result.txt", "wb");
     if (!outfile) {
-        perror("Opening output file");
-        fclose(infile);
+        perror("Error opening output file");
         return EXIT_FAILURE;
     }
 
-    // Decrypt the file (key and IV passed in)
-    if (!do_crypt(infile, outfile, 0, key, iv)) {  // 0 for decryption
-        fprintf(stderr, "Decryption failed\n");
-        fclose(infile);
-        fclose(outfile);
+    // Open words (keys) file and check for errors
+    words = fopen("words.txt", "r");
+    if (!words) {
+        perror("Error opening words file");
         return EXIT_FAILURE;
     }
 
-    // Clean up
-    fclose(infile);
+    // Buffer to hold the word read from the file
+    char read_word[101];  // Allowing up to 100 characters for reading
+
+    // Buffer to hold the word stored as unsigned char and padded
+    unsigned char word[17]; // 16 characters + 1 for the null terminator
+
+    // Read each word from the file until end-of-file is reached, trying encryption
+    // using each word as the key
+    while (fgets(read_word, sizeof(read_word), words) != NULL) {
+
+        // fgets() includes the newline, so remove it
+        size_t len = strlen(read_word);
+        if (len > 0 && read_word[len - 1] == '\n') {
+            read_word[len - 1] = '\0';
+            len--;
+        }
+
+        // If the word is 15 characters or less, proceed
+        if (len <= 15) {
+            // Copy the word to 'word' array as unsigned char
+            strcpy((char *)word, read_word);
+
+            // Pad with '#' characters if the word is shorter than 16 characters
+            for (size_t i = len; i < 16; i++) {
+                word[i] = '#';
+            }
+            word[16] = '\0';  // Null-terminate the string
+
+            // Print the resulting padded word
+            printf("Word: %s\n", word);
+            print_as_hex(word);
+
+            //the key is not the issue! it is failing when the correct key
+            //is not the first one passed
+
+            //Print other parameters
+            printf("IV:\n");
+            print_as_hex(iv);
+            printf("infile:\n");
+            print_file("ciphertext.bin", "rb");
+            printf("outfile:\n");
+            print_file("result.txt", "wb");
+
+            // decrypt the cyphertext using word as the key
+            if (!do_crypt(outfile, 0, word, iv)) {  // 0 for decryption
+                fprintf(stderr, "Decryption failed\n\n");
+            } else {
+                printf("Decryption succeeded!\n\n");
+            }
+        }
+    }
+
+    // Close files
     fclose(outfile);
-
-    printf("Decryption successful. Output saved to test_result.txt\n");
+    fclose(words);
     return EXIT_SUCCESS;
 
 }
