@@ -14,24 +14,22 @@ void print_file(char name[100], char read_type[3]) {
         return;
     }
 
-    unsigned char buffer[1024];  // Buffer to hold chunks of data
-    size_t bytes_read;
+    int ch;
 
-    // Read the file in chunks and print
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), file)) > 0) {
-        for (size_t i = 0; i < bytes_read; i++) {
-            printf("%02x", buffer[i]);  // Print byte in hex format
-        }
+    while ((ch = fgetc(file)) != EOF) {
+        putchar(ch); // Print each character to stdout
     }
 
     printf("\n");
+
+    // Close the file
+    fclose(file);
 }
 
 /*
 This function prints an unsigned char word as hex; used for testing
 */
 void print_as_hex(unsigned char word[]) {
-    // Print the word as hex bytes
     printf("Hex Bytes: ");
     for (size_t i = 0; i < 16; i++) {
         printf("0x%02x ", word[i]);
@@ -50,8 +48,11 @@ is the contents of "ciphertext.bin", which stores the ciphertext. The output fil
 is "result.txt" which is the plain text. IV is hardcoded, and the key is read from
 a file "words.txt" 
 */
-int do_crypt(FILE *out, int do_encrypt, unsigned char *key, unsigned char *iv)
+int do_crypt(FILE *out, unsigned char *key, unsigned char *iv)
 {
+    // hard-code do_encrypt a 0 for decryption
+    int do_encrypt = 0;
+
     // in holds the encrypted text in "ciphertext.bin"
     FILE *in = fopen("ciphertext.bin", "rb");
     if (!in) {
@@ -98,13 +99,9 @@ int do_crypt(FILE *out, int do_encrypt, unsigned char *key, unsigned char *iv)
 }
 
 /*
-This program currently takes a hardcoded key and iv, opens an encrypted file
-"ciphertext.bin", and outputs the result to a decrypted file "test_result.txt".
-
-It has been tested and is working correctly.
-
-The next step is to read the key from a file "words.txt", iterating line by line
-of the file and attempting decryption.
+This program currently takes a hardcoded iv, keys from "words.txt"
+and opens an encrypted file "ciphertext.bin", and outputs the result
+to a decrypted file "test_result.txt".
 */
 int main() {
     // IV is hardcoded, translated from hex_iv to iv
@@ -116,71 +113,63 @@ int main() {
     }
 
     // outfile holds the decrypted text in "result.txt"
-    // file holds the list of words we try as the key
+    // words holds the list of words we try as the key
     FILE *outfile, *words;
 
-    // Open the output (decrypted) file, check for errors
     outfile = fopen("result.txt", "wb");
     if (!outfile) {
         perror("Error opening output file");
         return EXIT_FAILURE;
     }
 
-    // Open words (keys) file and check for errors
     words = fopen("words.txt", "r");
     if (!words) {
         perror("Error opening words file");
         return EXIT_FAILURE;
     }
 
-    // Buffer to hold the word read from the file
-    char read_word[101];  // Allowing up to 100 characters for reading
+    // buffer for word read
+    char read_word[101];  
 
-    // Buffer to hold the word stored as unsigned char and padded
-    unsigned char word[17]; // 16 characters + 1 for the null terminator
+    // unsigned char to store word and pass to decryption function
+    unsigned char word[17]; // 16 chars + 1 null terminator
 
-    // Read each word from the file until end-of-file is reached, trying encryption
+    // read each word from the file until end-of-file is reached, trying encryption
     // using each word as the key
     while (fgets(read_word, sizeof(read_word), words) != NULL) {
 
-        // fgets() includes the newline, so remove it
+        // fgets() takes the newline; i remove it
         size_t len = strlen(read_word);
         if (len > 0 && read_word[len - 1] == '\n') {
             read_word[len - 1] = '\0';
             len--;
         }
 
-        // If the word is 15 characters or less, proceed
+        // only use words of lenght <= 15
         if (len <= 15) {
-            // Copy the word to 'word' array as unsigned char
+            // copy read word to unsigned char array
             strcpy((char *)word, read_word);
 
-            // Pad with '#' characters if the word is shorter than 16 characters
+            // pad words with hashtag (#)
             for (size_t i = len; i < 16; i++) {
                 word[i] = '#';
             }
-            word[16] = '\0';  // Null-terminate the string
+            // add null terminator
+            word[16] = '\0'; 
 
             // Print the resulting padded word
             printf("Word: %s\n", word);
             print_as_hex(word);
 
-            //the key is not the issue! it is failing when the correct key
-            //is not the first one passed
-
             //Print other parameters
             printf("IV:\n");
             print_as_hex(iv);
-            printf("infile:\n");
-            print_file("ciphertext.bin", "rb");
-            printf("outfile:\n");
-            print_file("result.txt", "wb");
 
             // decrypt the cyphertext using word as the key
-            if (!do_crypt(outfile, 0, word, iv)) {  // 0 for decryption
-                fprintf(stderr, "Decryption failed\n\n");
+            if (!do_crypt(outfile, word, iv)) {
+                fprintf(stderr, "Decryption failed\n\n\n");
             } else {
-                printf("Decryption succeeded!\n\n");
+                printf("Decryption succeeded!\n\n\n");
             }
         }
     }
